@@ -187,23 +187,22 @@ def spectral_diff_adv(n, t, cx, c, D, L, a, init_state):
     final_state = final_state / np.linalg.norm(final_state)
     return final_state
 
-def fd_diff_adv(n, t, cx, c, D, L, a, init_state):
-    N= 2**n
+def fe_fd_diff_adv(n, t, cx, c, D, L, a, init_state):
+    N = 2**n
     dx = L / N
     dt = t / 100000
     N_steps = int(t / dt)
 
-    gamma = dt /  dx
+    gamma = dt / dx
     beta = D * dt / dx**2
+    
     diag_main = (1.0 - 2*beta) * np.ones(N)
 
-    c_l = np.roll(c, 1)
-    diag_lower = beta + gamma * c_l
+    diag_lower = beta + (gamma * c / 2.0)
+    diag_upper = beta - (gamma * c / 2.0)
 
-    c_u = np.roll(c, -1)
-    diag_upper = beta - gamma * c_u
-
-    A = sparse.diags([diag_main, diag_lower, diag_upper, diag_lower[0], diag_upper[N-1]], [0, -1, 1, -N+1, N-1])
+    A = sparse.diags([diag_main, diag_lower, diag_upper, diag_lower, diag_upper], 
+                     [0, -1, 1, -N+1, N-1])
 
     state = init_state
     for i in range(N_steps):
@@ -213,23 +212,24 @@ def fd_diff_adv(n, t, cx, c, D, L, a, init_state):
     return final_state
 
 def be_fd_diff_adv(n, t, cx, c, D, L, a, init_state):
-    N= 2**n
+    N = 2**n
     dx = L / N
     dt = t / 100000
     N_steps = int(t / dt)
 
-    gamma = dt /  dx
+    gamma = dt / dx
     beta = D * dt / dx**2
+    
     diag_main = (1.0 + 2*beta) * np.ones(N)
 
-    c_l = np.roll(c, 1)
-    diag_lower = -beta - gamma * c_l
+    # Note the flipped signs for the implicit LHS matrix
+    diag_lower = -beta - (gamma * c / 2.0)
+    diag_upper = -beta + (gamma * c / 2.0)
 
-    c_u = np.roll(c, -1)
-    diag_upper = -beta + gamma * c_u
-
-    A = sparse.diags([diag_main, diag_lower, diag_upper, diag_lower[0], diag_upper[N-1]], [0, -1, 1, -N+1, N-1])
+    A = sparse.diags([diag_main, diag_lower, diag_upper, diag_lower, diag_upper], 
+                     [0, -1, 1, -N+1, N-1])
     A = A.tocsr()
+    
     state = init_state
     for i in range(N_steps):
         state = spsolve(A, state)
