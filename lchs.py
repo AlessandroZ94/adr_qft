@@ -22,7 +22,7 @@ def get_qft_mat(n):
 
     return qft, qft_inv
 
-def lchs(n, t, cx, c, D, L, init_state, r_steps=10, useFixedJ=False, fixed_J=64):
+def lchs(n, t, cx, c, D, L, init_state, r_steps=10, useFixedJ=False, fixed_J=64, normalize=True):
     N = 2**n
     final_time = t
     eps_lchs = 1e-3
@@ -165,13 +165,14 @@ def lchs(n, t, cx, c, D, L, init_state, r_steps=10, useFixedJ=False, fixed_J=64)
     success_prob = np.linalg.norm(system_state)**2
     print(f"Success Probability: {success_prob:.4e}")
     
-
-    final = (system_state) / np.linalg.norm(system_state)
+    final = system_state
+    if normalize:
+        final = (system_state) / np.linalg.norm(system_state)
     
     return final, success_prob
 
 
-def spectral_diff_adv(n, t, cx, c, D, L, a, init_state):
+def spectral_diff_adv(n, t, cx, c, D, L, a, init_state, normalize=True):
     N= 2**n
     j_indices = np.arange(N)
     k_j = 2*np.pi /L * np.where(j_indices < N/2, j_indices, j_indices - N)
@@ -184,10 +185,35 @@ def spectral_diff_adv(n, t, cx, c, D, L, a, init_state):
     A = - (D*D2-0.5*(np.diag(c) @ D1 + D1 @ np.diag(c)) - 0.5*np.diag(cx)-np.diag(a))
     
     final_state = expm(-A*t) @ init_state
-    final_state = final_state / np.linalg.norm(final_state)
+    if normalize:
+        final_state = final_state / np.linalg.norm(final_state)
     return final_state
 
-def fe_fd_diff_adv(n, t, cx, c, D, L, a, init_state):
+def fe_spectral_diff_adv(n, t, cx, c, D, L, a, init_state, normalize=True):
+    N= 2**n
+    j_indices = np.arange(N)
+    k_j = 2*np.pi /L * np.where(j_indices < N/2, j_indices, j_indices - N)
+    P1 = np.diag(1j*k_j)
+    P2 = np.diag(-k_j**2)
+    QFT, QFT_inv = get_qft_mat(n)
+    D1 = QFT_inv @ P1 @ QFT
+    D2 = QFT_inv @ P2 @ QFT
+
+    A = - (D*D2-0.5*(np.diag(c) @ D1 + D1 @ np.diag(c)) - 0.5*np.diag(cx)-np.diag(a))
+
+    N_steps = 10000
+    dt = t / N_steps
+    M = np.eye(N) - A * (dt)
+
+    state = init_state
+    for _ in range(N_steps):
+        state = M @ state
+    final_state = state
+    if normalize:
+        final_state = final_state / np.linalg.norm(final_state)
+    return final_state
+
+def fe_fd_diff_adv(n, t, cx, c, D, L, a, init_state, normalize=True):
     N = 2**n
     dx = L / N
     dt = t / 100000
@@ -205,13 +231,14 @@ def fe_fd_diff_adv(n, t, cx, c, D, L, a, init_state):
                      [0, -1, 1, -N+1, N-1])
 
     state = init_state
-    for i in range(N_steps):
+    for _ in range(N_steps):
         state = A @ state
-
-    final_state = state / np.linalg.norm(state)
+    final_state = state
+    if normalize: 
+        final_state = state / np.linalg.norm(state)
     return final_state
 
-def be_fd_diff_adv(n, t, cx, c, D, L, a, init_state):
+def be_fd_diff_adv(n, t, cx, c, D, L, a, init_state, normalize=True):
     N = 2**n
     dx = L / N
     dt = t / 100000
@@ -231,8 +258,9 @@ def be_fd_diff_adv(n, t, cx, c, D, L, a, init_state):
     A = A.tocsr()
     
     state = init_state
-    for i in range(N_steps):
+    for _ in range(N_steps):
         state = spsolve(A, state)
-
-    final_state = state / np.linalg.norm(state)
+    final_state = state
+    if normalize: 
+        final_state = state / np.linalg.norm(state)
     return final_state
