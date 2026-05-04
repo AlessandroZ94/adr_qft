@@ -171,6 +171,19 @@ def lchs(n, t, cx, c, D, L, init_state, r_steps=10, useFixedJ=False, fixed_J=64,
     
     return final, success_prob
 
+def spectral_diff_adv_op(n, t, cx, c, D, L, a):
+    N= 2**n
+    j_indices = np.arange(N)
+    k_j = 2*np.pi /L * np.where(j_indices < N/2, j_indices, j_indices - N)
+    P1 = np.diag(1j*k_j)
+    P2 = np.diag(-k_j**2)
+    QFT, QFT_inv = get_qft_mat(n)
+    D1 = QFT_inv @ P1 @ QFT
+    D2 = QFT_inv @ P2 @ QFT
+
+    A = - (D*D2-0.5*(np.diag(c) @ D1 + D1 @ np.diag(c)) - 0.5*np.diag(cx)-np.diag(a))
+    U = expm(-A*t)
+    return U
 
 def spectral_diff_adv(n, t, cx, c, D, L, a, init_state, normalize=True):
     N= 2**n
