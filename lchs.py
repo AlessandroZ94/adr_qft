@@ -138,7 +138,7 @@ def lchs(n, t, cx, c, D, L, init_state, r_steps=10, useFixedJ=False, fixed_J=64,
     qft_gate = UnitaryGate(qft, label="QFT")
     iqft_gate = UnitaryGate(qft_inv, label="IQFT")
 
-# --- B. THE TROTTER LOOP ---
+    # --- B. THE TROTTER LOOP ---
     for _ in range(r_steps):
         # 1. Apply w-independent Advection Commutator Step (First mathematically)
         circuit.append(UnitaryGate(U_step), [reg_ca[0]] + list(reg_s))
