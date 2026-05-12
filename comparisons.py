@@ -21,7 +21,7 @@ for n_qubits in ns:
     D = 0.1
     N = 2**n_qubits
     L = 2 * np.pi               
-    t = 10   
+    t = 0.5   
     x = np.linspace(0, L, N, endpoint=False)
     dx = L / N
     a = 0.01
@@ -37,36 +37,42 @@ for n_qubits in ns:
     state = np.zeros_like(x)
     x_0 = dx * N/2
     state[N//2] = 1.0
-    state = state / np.linalg.norm(state)
+    state = state / dx
+    #state = state / np.linalg.norm(state)
 
 
 
-    spectral = spectral_diff_adv(n_qubits, t, cx, c, D, L, a*np.ones_like(c), init_state=state, normalize=True)
+    spectral = spectral_diff_adv(n_qubits, t, cx, c, D, L, a*np.ones_like(c), init_state=state, normalize=False)
     #fd = fe_fd_diff_adv(n_qubits, t, cx, c, D, L, np.zeros_like(c), init_state=state)
     exact = + 1/(L)*np.exp(-a*t) + np.zeros_like(x)
     for k in range(1,1000000):
         exact = exact +np.exp(-D*(2*np.pi*k/L)**2*t-a*t)*2/L*np.cos(2*k*np.pi/L*(x-(x_0+c_H*t)))
     #exact = np.exp(-(x-(x_0+c_H*t))**2/(4*D*t)-a*t)
-    exact = exact / np.linalg.norm(exact)
+    #exact = exact / np.linalg.norm(exact)
     
-    line, = plt.plot(x, np.real(spectral), 'o', markersize=4)
-    color = line.get_color()
+    if N == 8 or N == 32 or N==128:
+        line, = plt.plot(x, np.real(spectral), 'o--', markersize=4, label=f'$N={N:.0f}$')
+
+    #color = line.get_color()
     #plt.plot(x, fd, 'x', color=color, markersize=4)
-    plt.plot(x, exact, '-', color=color, label=f'$N={N:.0f}$', )
+    #plt.plot(x, exact, '-', color=color, label=f'$N={N:.0f}$', )
     errs.append(np.linalg.norm(np.real(spectral) - exact,np.inf))
 
+plt.plot(x, exact, 'k-', label="$\\psi$")
 plt.xlabel('$x$')
-plt.ylabel('$|\psi \\rangle$')
+plt.ylabel('$\phi$')
 plt.legend(loc='best', fontsize=14)
-plt.savefig('./figures/exact10.png', bbox_inches='tight')
+plt.title(f'$t={t:.1f}$', fontsize=14)
+plt.savefig('./figures/exact.png', bbox_inches='tight')
 plt.show()
 
 
 plt.figure()
 plt.semilogy(2**np.array(ns), errs, 'o-')
 plt.xlabel('$N$ ')
-plt.ylabel('$|||\\psi\\rangle- |\\phi\\rangle ||_{\\infty}$')
-plt.savefig('./figures/exact_error10.png', bbox_inches='tight')
+plt.ylabel('$||\\psi- \\phi ||_{\\infty}$')
+plt.title(f'$t={t:.1f}$', fontsize=14)
+plt.savefig('./figures/exact_error.png', bbox_inches='tight')
 plt.show()
 
 
