@@ -183,7 +183,7 @@ def spectral_diff_adv_op(n, t, cx, c, D, L, a, shift=0):
 
     A = - (D*D2-0.5*(np.diag(c) @ D1 + D1 @ np.diag(c)) - 0.5*np.diag(cx)-np.diag(a)) + shift * np.eye(N)
     U = expm(-A*t)
-    return U
+    return U, A
 
 def spectral_diff_adv(n, t, cx, c, D, L, a, init_state, normalize=True):
     N= 2**n

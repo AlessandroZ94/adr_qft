@@ -22,10 +22,10 @@ for n_qubits in ns:
     D = 0.1
     N = 2**n_qubits
     L = 2 * np.pi               
-    t = 10   
+    t = 0.5   
     x = np.linspace(0, L, N, endpoint=False)
     dx = L / N
-    a = 0.01
+    a = 0.0
 
     # Parameters
     c_L = 0.0
@@ -69,7 +69,7 @@ plt.xlabel('$x$')
 plt.ylabel('$\phi$')
 plt.legend(loc='best', fontsize=14)
 plt.title(f'$t={t:.1f}$', fontsize=14)
-plt.savefig(f'./figures/exact_{int(t)}.pdf', bbox_inches='tight')
+plt.savefig(f'./figures/exact_{int(t)}_a_{str(a)}.pdf', bbox_inches='tight')
 plt.show()
 
 
@@ -78,7 +78,7 @@ plt.semilogy(2**np.array(ns), errs, 'o-')
 plt.xlabel('$N$ ')
 plt.ylabel('$\Vert e \Vert_{\infty}$')
 plt.title(f'$t={t:.1f}$', fontsize=14)
-plt.savefig(f'./figures/exact_error_{int(t)}.pdf', bbox_inches='tight')
+plt.savefig(f'./figures/exact_error_{int(t)}_a_{str(a)}.pdf', bbox_inches='tight')
 plt.show()
 
 
