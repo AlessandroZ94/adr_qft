@@ -42,7 +42,7 @@ plt.plot(x, state, 'k-', label='$t=0$',)
 errs = []
 
 for t in ts:
-    lchs_state, success_prob = lchs(n_qubits, t, cx, c, D, L, init_state=state, r_steps=100,   useFixedJ=True, fixed_J=128)
+    lchs_state, success_prob = lchs(n_qubits, t, cx, c, D, L, init_state=state, fixed_J=True, J=128)
     exact = spectral_diff_adv(n_qubits, t, cx, c, D, L, np.zeros_like(c), init_state=state)
     errs.append(np.linalg.norm(np.real(lchs_state) - np.real(exact)))
 

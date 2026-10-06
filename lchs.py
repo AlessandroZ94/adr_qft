@@ -3,7 +3,7 @@ from numpy.random import beta
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import StatePreparation, DiagonalGate, UnitaryGate
 from qiskit.quantum_info import Statevector
-from scipy.linalg import expm
+from scipy.linalg import block_diag, expm
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 
@@ -22,153 +22,137 @@ def get_qft_mat(n):
 
     return qft, qft_inv
 
-def lchs(n, t, cx, c, D, L, init_state, r_steps=10, useFixedJ=False, fixed_J=64, normalize=True):
+def lchs(
+    n,
+    t,
+    cx,
+    c,
+    D,
+    L,
+    a=None,
+    init_state=None,
+    eps=1e-3,
+    normalize=True,
+    fixed_J=False,
+    J=128,
+):
+    """Apply LCHS using exact SELECT blocks."""
     N = 2**n
-    final_time = t
-    eps_lchs = 1e-3
-    eps_quad = 1e-3
+    if init_state is None:
+        if a is None:
+            raise ValueError("init_state is required.")
+        init_state = a
+        a = None
+    if a is None:
+        a = np.zeros_like(c)
+
+    if not np.isfinite(eps) or eps <= 0:
+        raise ValueError("eps must be a finite positive number.")
+
     c_lchs = 1
 
-    H_herm_raw = cx / 2
-    min_eigenvalue = np.min(H_herm_raw)
-    
-    # 1. Apply the shift ONLY if there are negative eigenvalues
-    if min_eigenvalue < 0:
-        lambda_shift = np.abs(min_eigenvalue)
-        print(f"Applying shift of {lambda_shift:.4f} to ensure positive semidefiniteness.")
-    else:
-        lambda_shift = 0
-        
     j_indices = np.arange(N)
-    k_indices = np.where(j_indices <= N/2, j_indices, j_indices - N)
-    P_1 = 1j * (2 * np.pi / L) * (k_indices)
-    P_2 = -1 * (2 * np.pi / L)**2 * (k_indices**2) 
+    k_indices = np.where(j_indices < N / 2, j_indices, j_indices - N)
+    k_vals_spectral = (2 * np.pi / L) * k_indices
 
-    qft, qft_inv = get_qft_mat(n)
-    Delta = qft_inv @ np.diag(P_1) @ qft
-    
-    # 2. SEPARATE HERMITIAN TERMS INTO 1D EIGENVALUE ARRAYS
-    H_herm_phys = H_herm_raw + lambda_shift  # Diagonal in physical space
-    H_herm_mom = D * P_2                     # Diagonal in momentum space 
+    P = np.diag(1j * k_vals_spectral)
+    P2 = np.diag(-k_vals_spectral**2)
 
-    norm_L = D * (np.pi * N / L)**2 + np.max(np.abs(cx / 2))
-    norm = t * norm_L
-    h = np.pi / (norm/2 + np.log(64*np.exp(3*c_lchs/2)/(15*eps_quad)))
-    gamma = 1/c_lchs * np.sqrt(c_lchs+np.log((1+1/(2*np.pi))/eps_lchs))
-    
-    if useFixedJ:
-        J_int = fixed_J
+    omega = np.exp(2j * np.pi / N)
+    j_mesh, k_mesh = np.meshgrid(np.arange(N), np.arange(N))
+    qft = np.power(omega, j_mesh * k_mesh) / np.sqrt(N)
+    qft_inv = qft.conj().T
+
+    D_mat = qft_inv @ P @ qft
+    D2_mat = qft_inv @ P2 @ qft
+
+    C_mat = np.diag(c)
+    C_prime = np.diag(cx)
+    R_mat = np.diag(a)
+
+    lambda_val = np.min(np.diag(R_mat + 0.5 * C_prime).real)
+    if lambda_val < 0:
+        shift = lambda_val
+        print(f"Applying shift lambda = {shift:.4f} to ensure positive semidefiniteness.")
     else:
-        R = 2*c_lchs*gamma**2
-        J = R/h
-        J_int = int(2**(np.floor(np.log2(J))))
-        
-    num_terms = 2*J_int
-    n_ancilla = int(np.log2(num_terms))
+        shift = 0.0
 
-    # Creates exactly num_terms points (-J_int to J_int-1)
-    j_vals = np.arange(-J_int, J_int) 
-    k_vals = h * j_vals
-    weights = (h / np.sqrt(2*np.pi)) * np.exp(c_lchs*(1-1j*k_vals)) * np.exp(-(k_vals**2+1)/(4*gamma**2)) / (1 + k_vals**2)
+    L_mat = -D * D2_mat + R_mat + 0.5 * C_prime - shift * np.eye(N)
+    H_mat = -0.5j * (C_mat @ D_mat + D_mat @ C_mat)
 
+    norm_L = D * (np.pi * N / L) ** 2 + np.max(np.abs(cx / 2))
+    norm = t * norm_L
+    const = (3 + 3 / (2 * np.pi)) / eps
+    gamma = np.sqrt(1 + np.log(const))
+    radius = 2 * (1 + np.log(const))
+    k = int(
+        np.ceil(
+            np.log2(
+                2
+                / np.pi
+                * (1 + np.log(const))
+                * (norm / 2 + 1.5 + np.log(64 / (5 * eps)))
+                + 1
+            )
+        )
+    )
+    h = radius / (2**k - 1)
+    J_int = radius / h
+    J_eff = 2 ** np.ceil(np.log2(J_int))
+
+    if fixed_J:
+        J_eff = J
+    J_eff = int(J_eff)
+    if J_eff <= 0 or J_eff & (J_eff - 1):
+        raise ValueError("The fixed LCHS term count J must be a positive power of two.")
+
+    n_ancilla = int(np.log2(2 * J_eff))
+    j_vals = np.arange(-J_eff, J_eff)
+    omega_vals = h * j_vals
+
+    weights = (
+        (h / np.pi)
+        * np.exp(c_lchs * (1 - 1j * omega_vals))
+        * np.exp(-(omega_vals**2 + 1) / (4 * gamma**2))
+        / (1 + omega_vals**2)
+    )
     magnitudes = np.abs(weights)
     phases = np.angle(weights)
 
     coeffs = np.sqrt(magnitudes)
-    coeffs = coeffs / np.linalg.norm(coeffs)         
+    coeffs = coeffs / np.linalg.norm(coeffs)
 
-    dt = final_time / r_steps
-    sqrt_dt = np.sqrt(dt)
+    V_blocks = []
+    for w in omega_vals:
+        exponent = -1j * (w * L_mat + H_mat) * t
+        V_blocks.append(expm(exponent))
 
-    # 3. SETUP TWO CONTROLLED-DIAGONAL GATES
-    select_diag_phys = np.ones(2**(n_ancilla + n), dtype=complex)
-    select_diag_mom = np.ones(2**(n_ancilla + n), dtype=complex)
+    SEL_matrix = block_diag(*V_blocks)
 
-    for i in range(num_terms):
-        # Physical space advection/reaction 
-        U_phys = np.exp(-1j * dt * H_herm_phys * k_vals[i])
-        
-        # Momentum space diffusion
-        U_mom = np.exp(1j * dt * H_herm_mom * k_vals[i]) 
-        
-        for sys_idx in range(N):
-            idx = (sys_idx << n_ancilla) + i
-            select_diag_phys[idx] = U_phys[sys_idx]
-            select_diag_mom[idx] = U_mom[sys_idx]
+    reg_s = QuantumRegister(n, "system")
+    reg_a = QuantumRegister(n_ancilla, "lchs_ancilla")
+    circuit = QuantumCircuit(reg_s, reg_a)
+    circuit.append(StatePreparation(init_state), reg_s)
 
-    gate_phys = DiagonalGate(select_diag_phys)
-    gate_mom = DiagonalGate(select_diag_mom)
-
-    # Isolate the LCU phase into a single ancilla gate outside the loop
-    ancilla_phase_gate = DiagonalGate(np.exp(1j * phases))
-
-    # --- 4. SETUP TROTTER STEP FOR SKEW-HERMITIAN PART (U_step) ---
-    X = np.array([[0, 1], [1, 0]], dtype=complex)
-    Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
-    
-    A = -np.diag(c) / 2
-    B = Delta  
-    A_tilde = np.kron(A, Y)
-    B_tilde = np.kron(B, X)
-
-    # Compute a SINGLE Trotter step for the skew-Hermitian commutator
-    step_1 = expm(-1j * sqrt_dt * A_tilde)
-    step_2 = expm(sqrt_dt * B_tilde)
-    step_3 = expm(1j * sqrt_dt * A_tilde)
-    step_4 = expm(-sqrt_dt * B_tilde)
-    U_step = step_4 @ step_3 @ step_2 @ step_1 
-
-    # ==== 5. CIRCUIT CONSTRUCTION ====
-    reg_a = QuantumRegister(n_ancilla, 'lchs_ancilla') 
-    reg_ca = QuantumRegister(1, 'commutator_ancilla') 
-    reg_s = QuantumRegister(n, 'system')
-    circuit = QuantumCircuit(reg_a, reg_ca, reg_s)
-
-    # Initialize System State
-    stateprep = StatePreparation(init_state)
-    circuit.append(stateprep, reg_s)
-
-    # --- A. PREP LCU SUPERPOSITION ---
     prep_gate = StatePreparation(coeffs)
     circuit.append(prep_gate, reg_a)
-    
-    # Apply the LCU complex phases exactly ONCE before the loop
-    circuit.append(ancilla_phase_gate, reg_a)
-
-    qft_gate = UnitaryGate(qft, label="QFT")
-    iqft_gate = UnitaryGate(qft_inv, label="IQFT")
-
-    # --- B. THE TROTTER LOOP ---
-    for _ in range(r_steps):
-        # 1. Apply w-independent Advection Commutator Step (First mathematically)
-        circuit.append(UnitaryGate(U_step), [reg_ca[0]] + list(reg_s))
-
-    
-        # 2. Apply w-dependent Advection/Reaction (Second)
-        circuit.append(gate_phys, list(reg_a) + list(reg_s))
-
-        # 3. Apply w-dependent Diffusion (Third)
-        circuit.append(qft_gate, reg_s)
-        circuit.append(gate_mom, list(reg_a) + list(reg_s))
-        circuit.append(iqft_gate, reg_s)
-
-    # --- C. UNPREP LCU SUPERPOSITION ---
+    circuit.append(DiagonalGate(np.exp(1j * phases)), reg_a)
+    circuit.append(UnitaryGate(SEL_matrix, label="SEL"), list(reg_s) + list(reg_a))
     circuit.append(prep_gate.inverse(), reg_a)
 
-    # ==== 6. SIMULATION & POST-SELECTION ====
     final_state = Statevector(circuit)
     full_data = np.array(final_state)
+    system_state = full_data[:N]
+    system_state = system_state * np.exp(-shift * t)
 
-    # Qiskit ordering: reg_s (MSB) | reg_ca | reg_a (LSB)
-    system_state = full_data[0::2**(n_ancilla + 1)]
+    success_prob = np.linalg.norm(system_state) ** 2
+    print(f"Success Probability at t={t}: {success_prob:.4e}")
 
-    success_prob = np.linalg.norm(system_state)**2
-    print(f"Success Probability: {success_prob:.4e}")
-    
-    final = system_state
     if normalize:
-        final = (system_state) / np.linalg.norm(system_state)
-    
+        final = system_state / np.linalg.norm(system_state)
+    else:
+        final = system_state
+
     return final, success_prob
 
 def spectral_diff_adv_op(n, t, cx, c, D, L, a, shift=0):
