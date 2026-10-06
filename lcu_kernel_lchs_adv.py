@@ -47,7 +47,7 @@ plt.plot(x, state, 'k-', label='$t=0$')
 errs = []
 for t in ts:
 
-    final, _ = lchs(n_qubits, t, cx, c, 0, L, state, r_steps=100, useFixedJ=True, fixed_J=128, normalize=True)
+    final, _ = lchs(n_qubits, t, cx, c, 0, L, state, fixed_J=True, J=128, normalize=True)
 
 
     # Exact Solution 
@@ -93,4 +93,3 @@ plt.xlabel('$t$ ')
 plt.ylabel('$|||\\phi\\rangle- |\\phi_{h}\\rangle ||$')
 plt.savefig('./figures/par_advection_error.png', bbox_inches='tight')
 plt.show()
-
