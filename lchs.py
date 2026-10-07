@@ -35,8 +35,11 @@ def lchs(
     normalize=True,
     fixed_J=False,
     J=128,
+    *,
+    r_steps=None,
+    useFixedJ=None,
 ):
-    """Apply LCHS using exact SELECT blocks."""
+    """Apply LCHS with exact SELECT blocks; legacy Trotter arguments remain accepted."""
     N = 2**n
     if init_state is None:
         if a is None:
@@ -45,6 +48,15 @@ def lchs(
         a = None
     if a is None:
         a = np.zeros_like(c)
+
+    if useFixedJ is not None:
+        fixed_j_requested = useFixedJ
+        if useFixedJ and isinstance(fixed_J, (int, np.integer)) and not isinstance(fixed_J, (bool, np.bool_)):
+            J = fixed_J
+    else:
+        fixed_j_requested = fixed_J
+        if isinstance(fixed_J, (int, np.integer)) and not isinstance(fixed_J, (bool, np.bool_)):
+            J = fixed_J
 
     if not np.isfinite(eps) or eps <= 0:
         raise ValueError("eps must be a finite positive number.")
@@ -63,8 +75,8 @@ def lchs(
     qft = np.power(omega, j_mesh * k_mesh) / np.sqrt(N)
     qft_inv = qft.conj().T
 
-    D_mat = qft_inv @ P @ qft
-    D2_mat = qft_inv @ P2 @ qft
+    D_mat = qft @ P @ qft_inv
+    D2_mat = qft @ P2 @ qft_inv
 
     C_mat = np.diag(c)
     C_prime = np.diag(cx)
@@ -100,7 +112,7 @@ def lchs(
     J_int = radius / h
     J_eff = 2 ** np.ceil(np.log2(J_int))
 
-    if fixed_J:
+    if fixed_j_requested:
         J_eff = J
     J_eff = int(J_eff)
     if J_eff <= 0 or J_eff & (J_eff - 1):
