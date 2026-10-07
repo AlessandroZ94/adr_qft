@@ -19,8 +19,8 @@ def spectral_diff_adv(n, t, cx, c, D, L, a, init_state):
     QFT = np.power(omega, j_mesh * k_mesh) / np.sqrt(N)
     QFT_dag = QFT.conj().T
     
-    D_mat = QFT_dag @ P @ QFT
-    D2_mat = QFT_dag @ P2 @ QFT
+    D_mat = QFT @ P @ QFT_dag
+    D2_mat = QFT @ P2 @ QFT_dag
     
     C_mat = np.diag(c)
     C_prime = np.diag(cx)
@@ -34,35 +34,45 @@ def spectral_diff_adv(n, t, cx, c, D, L, a, init_state):
 # ==== SIMULATION EXECUTION ====
 n_qubits = 5
 
-D = 0.1
+D = 0.001
+a_am = 0.1
+a_mid = 0.2
+c_max = 0.4
 N = 2**n_qubits
 L = 2 * np.pi               
 x = np.linspace(0, L, N, endpoint=False)
+x_periodic = np.concatenate((x, [L]))
 dx = L / N
 
 c_L = 0.0
-c_H = 0.2
+c_H = c_max
 c = -4*(c_H - c_L)/L**2 * x**2 + 4*(c_H - c_L)/L * x 
 cx = -8*(c_H - c_L)/L**2 * x + 4*(c_H - c_L)/L 
 
-# Initial State: Gaussian centered in the middle
-sigma = L/10
-state = np.exp(-0.5*((x - dx*N/4)/sigma)**2)
+plt.plot(x, c, 'k-', label='$c(x)$')
+plt.plot(x, cx, 'k--', label='$c\'(x)$')
+plt.show()
+a = (a_am * np.sin(x)+a_mid)
+# Initial State: Gaussian
+sigma = L/20
+mu = L/2
+state = np.exp(-0.5*((x-mu)/sigma)**2)
 state = state / np.linalg.norm(state)
 
 ts = [0.5, 1.0, 1.5, 2.0]
 
-plt.rcParams.update({
+plt.rcParams.update({""
+    "text.usetex": True,
     "font.size": 16,
-    "figure.figsize": (6, 5),
-    "axes.labelsize": 16,     
+    "figure.figsize": (5, 4), # SMALLER figure = LARGER relative text
+    "axes.labelsize": 16,       # Now 14 will look huge and readable
     "xtick.labelsize": 16,
     "ytick.labelsize": 16,
 })
 
 plt.figure()
-plt.plot(x, state, 'ko', markersize=4)
-plt.plot(x, state, 'k-', label='$t=0$',)
+plt.plot(x_periodic, np.concatenate((state, [state[0]])), 'ko', markersize=4)
+plt.plot(x_periodic, np.concatenate((state, [state[0]])), 'k-', label='$t=0$',)
 errs = []
 
 for t in ts:
@@ -74,22 +84,25 @@ for t in ts:
         c,
         D,
         L,
-        np.zeros_like(c),
+        a=a,
         init_state=state,
         fixed_J=True,
     )
-    exact = spectral_diff_adv(n_qubits, t, cx, c, D, L, np.zeros_like(c), init_state=state)
-    errs.append(np.linalg.norm(np.real(lchs_state) - np.real(exact),np.inf))
+    lchs_state = np.concatenate((lchs_state, [lchs_state[0]]))  # Enforce periodicity
+    exact = spectral_diff_adv(n_qubits, t, cx, c, D, L, a, init_state=state)
+    exact = np.concatenate((exact, [exact[0]]))  # Enforce periodicity
+    errs.append(np.linalg.norm(np.real(lchs_state) - np.real(exact)))
     lchs_state = np.real(lchs_state)
     exact = np.real(exact)
-    line, = plt.plot(x, lchs_state/np.linalg.norm(lchs_state), 'o', markersize=4)
+    line, = plt.plot(x_periodic, lchs_state/np.linalg.norm(lchs_state), 'o', markersize=4)
     color = line.get_color()
-    plt.plot(x, exact/np.linalg.norm(exact), '-', color=color, label=f'$t={t:.1f}$')
+    plt.plot(x_periodic, exact/np.linalg.norm(exact), '-', color=color, label=f'$t={t:.1f}$')
     
 plt.xlabel('$x$')
 plt.ylabel('$|\phi \\rangle$')
 plt.legend(loc='best', fontsize=14)
-plt.savefig('./figures/diff_adv.png', bbox_inches='tight')
+parameter_suffix = f'D{D:g}_a_am{a_am:g}_c_max{c_max:g}'
+plt.savefig(f'./figures/diff_adv_{parameter_suffix}.pdf', bbox_inches='tight')
 plt.show()
 
 
@@ -97,5 +110,5 @@ plt.figure()
 plt.semilogy(ts, errs, 'o-')
 plt.xlabel('$t$')
 plt.ylabel('$|||\\phi\\rangle- |\\phi_{h}\\rangle ||$')
-plt.savefig('./figures/diff_adv_error.png', bbox_inches='tight')
+plt.savefig(f'./figures/diff_adv_error_{parameter_suffix}.pdf', bbox_inches='tight')
 plt.show()
